@@ -75,6 +75,18 @@ const calculateScore = (target: Color, guess: Color) => {
   return parseFloat(score.toFixed(1));
 };
 
+const getDeltaE = (score: number) => {
+  return ((100 - score) * 0.15).toFixed(3);
+};
+
+const getRank = (score: number) => {
+  if (score >= 98) return 'Achromat+';
+  if (score >= 95) return 'Achromat';
+  if (score >= 90) return 'Chromist';
+  if (score >= 80) return 'Observer';
+  return 'Novice';
+};
+
 const getDailyColor = (): Color => {
   const today = new Date().toISOString().split('T')[0];
   const seed = today.split('-').reduce((acc, val) => acc + parseInt(val), 0);
@@ -89,6 +101,14 @@ const getDailyColor = (): Color => {
     h: Math.floor(pseudoRandom(seed) * 360),
     s: 40 + Math.floor(pseudoRandom(seed + 1) * 40), // 40-80%
     l: 30 + Math.floor(pseudoRandom(seed + 2) * 40), // 30-70%
+  };
+};
+
+const getRandomColor = (): Color => {
+  return {
+    h: Math.floor(Math.random() * 360),
+    s: 40 + Math.floor(Math.random() * 40), // 40-80%
+    l: 30 + Math.floor(Math.random() * 40), // 30-70%
   };
 };
 
@@ -126,11 +146,11 @@ const Footer = () => (
   <footer className="bg-background w-full py-12 border-t border-outline-variant/15 mt-auto">
     <div className="flex flex-col md:flex-row justify-between items-center px-8 gap-4 max-w-7xl mx-auto">
       <div className="font-label text-[10px] uppercase tracking-widest text-outline-variant">
-        © 2026 THE OPTICAL LABORATORY
+        ©  ⁶🤷‍♂️⁷
       </div>
       <div className="flex gap-8">
         {['Privacy', 'Terms', 'Twitter', 'Instagram'].map((link) => (
-          <a key={link} href="#" className="font-label text-[10px] uppercase tracking-widest text-outline-variant hover:text-primary transition-colors">
+          <a key={link} href="https://www.youtube.com/watch?v=Ca6bBmrrk3o" target="_blank" rel="noopener noreferrer" className="font-label text-[10px] uppercase tracking-widest text-outline-variant hover:text-primary transition-colors">
             {link}
           </a>
         ))}
@@ -144,13 +164,23 @@ export default function App() {
   const [targetColor, setTargetColor] = useState<Color>(getDailyColor());
   const [userColor, setUserColor] = useState<Color>({ h: 180, s: 50, l: 50 });
   const [countdown, setCountdown] = useState(5);
-  const [streak, setStreak] = useState(12); // Mock streak
-  const [history, setHistory] = useState<Attempt[]>([]);
+  const [streak, setStreak] = useState<number>(() => {
+    return parseInt(localStorage.getItem('chroma_streak') ?? '0', 10);
+  });
+  const [history, setHistory] = useState<Attempt[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('chroma_history') ?? '[]');
+    } catch {
+      return [];
+    }
+  });
   const [attemptsLeft, setAttemptsLeft] = useState(3);
   const [bestScore, setBestScore] = useState(0);
   const [currentAttempts, setCurrentAttempts] = useState<Attempt[]>([]);
   const [colorBlindMode, setColorBlindMode] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showShareCard, setShowShareCard] = useState(false);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
 
   useEffect(() => {
     if (phase === 'REVEAL' && countdown > 0) {
@@ -162,6 +192,18 @@ export default function App() {
   }, [phase, countdown]);
 
   const handleStart = () => {
+    setIsPracticeMode(false);
+    setTargetColor(getDailyColor());
+    setCountdown(5);
+    setPhase('REVEAL');
+    setAttemptsLeft(3);
+    setBestScore(0);
+    setCurrentAttempts([]);
+  };
+
+  const handlePracticeStart = () => {
+    setIsPracticeMode(true);
+    setTargetColor(getRandomColor());
     setCountdown(5);
     setPhase('REVEAL');
     setAttemptsLeft(3);
@@ -189,8 +231,28 @@ export default function App() {
       // Stay in PLAY phase but maybe show a toast or feedback
     } else {
       setAttemptsLeft(0);
-      setHistory([attempt, ...history]);
-      if (score > 90) setStreak(streak + 1);
+      
+      if (!isPracticeMode) {
+        const newHistory = [attempt, ...history];
+        setHistory(newHistory);
+        localStorage.setItem('chroma_history', JSON.stringify(newHistory));
+
+        const today = new Date().toISOString().split('T')[0];
+        const lastPlayed = localStorage.getItem('chroma_last_played');
+
+        if (lastPlayed !== today) {
+          let newStreak = streak;
+          if (score > 90) {
+            newStreak = streak + 1;
+          } else {
+            newStreak = 0;
+          }
+          setStreak(newStreak);
+          localStorage.setItem('chroma_streak', newStreak.toString());
+          localStorage.setItem('chroma_last_played', today);
+        }
+      }
+
       setPhase('RESULT');
     }
   };
@@ -199,6 +261,64 @@ export default function App() {
     const text = `Chroma: The Optical Laboratory\nScore: ${bestScore}%\nAttempts: ${3 - attemptsLeft}\n${window.location.href}`;
     navigator.clipboard.writeText(text);
     alert('Result copied to clipboard!');
+  };
+
+  const handleExportSvg = () => {
+    if (history.length === 0) return;
+    const latestScore = history[0].score;
+    const deltaE = getDeltaE(latestScore);
+    const rank = getRank(latestScore);
+    const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    const svgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0a0a0a" />
+          <stop offset="100%" stop-color="#141414" />
+        </linearGradient>
+        <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="rgba(0, 237, 180, 0.15)" />
+          <stop offset="100%" stop-color="rgba(0, 237, 180, 0)" />
+        </linearGradient>
+      </defs>
+      <rect width="800" height="400" fill="url(#bg)" rx="24" />
+      <circle cx="800" cy="0" r="300" fill="url(#glow)" filter="blur(50px)" />
+      
+      <g transform="translate(60, 60)">
+        <text x="0" y="20" fill="#00EDB4" font-family="monospace" font-size="12" letter-spacing="4" text-transform="uppercase">PERFORMANCE VERIFIED</text>
+        <text x="0" y="70" fill="#ffffff" font-family="sans-serif" font-weight="900" font-size="48">THE OPTICAL</text>
+        <text x="0" y="120" fill="#ffffff" font-family="sans-serif" font-weight="900" font-size="48">SUPERIORITY</text>
+        
+        <g transform="translate(0, 180)">
+          <text x="0" y="0" fill="#a3a3a3" font-family="monospace" font-size="12" letter-spacing="1" text-transform="uppercase">DELTA-E</text>
+          <text x="0" y="30" fill="#ffffff" font-family="sans-serif" font-weight="bold" font-size="24">${deltaE}</text>
+          
+          <text x="150" y="0" fill="#a3a3a3" font-family="monospace" font-size="12" letter-spacing="1" text-transform="uppercase">RANK</text>
+          <text x="150" y="30" fill="#ffffff" font-family="sans-serif" font-weight="bold" font-size="24">${rank}</text>
+          
+          <text x="300" y="0" fill="#a3a3a3" font-family="monospace" font-size="12" letter-spacing="1" text-transform="uppercase">DATE</text>
+          <text x="300" y="30" fill="#ffffff" font-family="sans-serif" font-weight="bold" font-size="24">${date}</text>
+        </g>
+        
+        <text x="0" y="280" fill="#525252" font-family="sans-serif" font-weight="bold" font-size="24" letter-spacing="-1">Chroma</text>
+      </g>
+      
+      <g transform="translate(550, 100)">
+        <circle cx="100" cy="100" r="80" fill="none" stroke="rgba(0, 237, 180, 0.2)" stroke-width="4" />
+        <circle cx="100" cy="100" r="60" fill="rgba(0, 237, 180, 0.1)" />
+        <path d="M70 100 L90 120 L130 80" stroke="#00EDB4" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      </g>
+    </svg>`;
+
+    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chroma-certificate-${date.replace(/ /g, '-')}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const targetHex = useMemo(() => hslToHex(targetColor.h, targetColor.s, targetColor.l), [targetColor]);
@@ -220,6 +340,77 @@ export default function App() {
         className={`flex-grow flex flex-col items-center justify-center relative overflow-hidden px-4 py-12 transition-all duration-500 ${colorBlindMode ? 'grayscale-[0.5] sepia-[0.2]' : ''}`}
       >
         <AnimatePresence>
+          {showShareCard && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-background/80 backdrop-blur-md"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="max-w-2xl w-full relative"
+              >
+                <div className="glass-panel p-10 rounded-xl relative border border-white/5 overflow-hidden mb-6">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[100px] -z-10"></div>
+                  <div className="flex flex-col md:flex-row justify-between gap-12">
+                    <div className="space-y-6">
+                      <div>
+                        <div className="font-label text-[10px] text-primary uppercase tracking-[0.2em] mb-2">Performance Verified</div>
+                        <div className="font-headline font-black text-4xl leading-tight">THE OPTICAL<br/>SUPERIORITY</div>
+                      </div>
+                      <div className="flex gap-10">
+                        <div>
+                          <div className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Delta-E</div>
+                          <div className="font-label font-bold text-xl">{history.length > 0 ? getDeltaE(history[0].score) : '0.000'}</div>
+                        </div>
+                        <div>
+                          <div className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Rank</div>
+                          <div className="font-label font-bold text-xl">{history.length > 0 ? getRank(history[0].score) : 'Novice'}</div>
+                        </div>
+                        <div>
+                          <div className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Date</div>
+                          <div className="font-label font-bold text-xl">{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        </div>
+                      </div>
+                      <div className="pt-4">
+                        <div className="font-headline font-bold text-xl tracking-tight text-on-surface-variant">Chroma</div>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0 flex items-center justify-center">
+                      <div className="relative w-40 h-40">
+                        <div className="absolute inset-0 rounded-full border-4 border-primary/20 animate-pulse"></div>
+                        <div className="absolute inset-4 rounded-full bg-primary-dim shadow-[0_0_40px_rgba(0,237,180,0.4)] flex items-center justify-center">
+                          <BadgeCheck className="w-12 h-12 text-on-primary-fixed" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center px-2">
+                  <button 
+                    onClick={() => {
+                      const text = `Chroma: The Optical Laboratory\nScore: ${history.length > 0 ? history[0].score : 0}%\nRank: ${history.length > 0 ? getRank(history[0].score) : 'Novice'}\n${window.location.href}`;
+                      navigator.clipboard.writeText(text);
+                      alert('Result copied to clipboard!');
+                    }}
+                    className="bg-white text-black font-label text-[10px] font-bold uppercase py-3 px-8 rounded-full hover:bg-primary transition-colors"
+                  >
+                    Copy Link
+                  </button>
+                  <button 
+                    onClick={() => setShowShareCard(false)}
+                    className="text-on-surface-variant hover:text-white font-label text-[10px] font-bold uppercase py-3 px-8 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
           {showHelp && (
             <motion.div 
               initial={{ opacity: 0 }}
@@ -506,6 +697,11 @@ export default function App() {
               </div>
 
               <div className="flex flex-col items-center text-center -mt-8">
+                {isPracticeMode && (
+                  <div className="font-label text-xs uppercase tracking-widest text-primary mb-4 bg-primary/10 px-4 py-1 rounded-full border border-primary/20">
+                    Practice Mode
+                  </div>
+                )}
                 <div className="relative flex items-center justify-center mb-4">
                   <svg className="w-48 h-48 transform -rotate-90">
                     <circle className="text-surface-container-highest" cx="96" cy="96" fill="transparent" r="88" stroke="currentColor" strokeWidth="6"></circle>
@@ -529,20 +725,44 @@ export default function App() {
               </div>
 
               <div className="flex flex-col md:flex-row gap-6 w-full max-w-md">
-                <button 
-                  onClick={() => setPhase('HISTORY')}
-                  className="flex-1 bg-gradient-to-br from-primary to-primary-dim text-on-primary-fixed font-label font-bold py-4 rounded-sm hover:opacity-90 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 group"
-                >
-                  <span>View Journal</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </button>
-                <button 
-                  onClick={handleShare}
-                  className="flex-1 glass-panel border border-outline-variant/15 text-on-surface font-label font-bold py-4 rounded-sm hover:bg-surface-variant/40 active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                  <Share2 className="w-4 h-4" />
-                  <span>Share Result</span>
-                </button>
+                {isPracticeMode ? (
+                  <>
+                    <button 
+                      onClick={handlePracticeStart}
+                      className="flex-1 bg-gradient-to-br from-primary to-primary-dim text-on-primary-fixed font-label font-bold py-4 rounded-sm hover:opacity-90 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 group"
+                    >
+                      <span>Play Again</span>
+                      <Bolt className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setIsPracticeMode(false);
+                        setPhase('HISTORY');
+                      }}
+                      className="flex-1 glass-panel border border-outline-variant/15 text-on-surface font-label font-bold py-4 rounded-sm hover:bg-surface-variant/40 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <History className="w-4 h-4" />
+                      <span>Back to Journal</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={() => setPhase('HISTORY')}
+                      className="flex-1 bg-gradient-to-br from-primary to-primary-dim text-on-primary-fixed font-label font-bold py-4 rounded-sm hover:opacity-90 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 group"
+                    >
+                      <span>View Journal</span>
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                    <button 
+                      onClick={handleShare}
+                      className="flex-1 glass-panel border border-outline-variant/15 text-on-surface font-label font-bold py-4 rounded-sm hover:bg-surface-variant/40 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span>Share Result</span>
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
@@ -583,7 +803,7 @@ export default function App() {
 
                   <div className="space-y-4">
                     <button 
-                      onClick={handleStart}
+                      onClick={handlePracticeStart}
                       className="w-full bg-gradient-to-br from-primary to-primary-dim py-4 rounded-sm flex items-center justify-center gap-2 group transition-all active:scale-[0.98]"
                     >
                       <Bolt className="w-4 h-4 text-on-primary-fixed" />
@@ -624,18 +844,24 @@ export default function App() {
                           <div className="flex gap-10">
                             <div>
                               <div className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Delta-E</div>
-                              <div className="font-label font-bold text-xl">0.024</div>
+                              <div className="font-label font-bold text-xl">{history.length > 0 ? getDeltaE(history[0].score) : '0.000'}</div>
                             </div>
                             <div>
                               <div className="font-label text-[10px] text-on-surface-variant uppercase mb-1">Rank</div>
-                              <div className="font-label font-bold text-xl">Achromat+</div>
+                              <div className="font-label font-bold text-xl">{history.length > 0 ? getRank(history[0].score) : 'Novice'}</div>
                             </div>
                           </div>
                           <div className="flex items-center gap-4 pt-4">
-                            <button className="bg-white text-black font-label text-[10px] font-bold uppercase py-2 px-6 rounded-full hover:bg-primary transition-colors">
+                            <button 
+                              onClick={handleExportSvg}
+                              className="bg-white text-black font-label text-[10px] font-bold uppercase py-2 px-6 rounded-full hover:bg-primary transition-colors"
+                            >
                               Export SVG
                             </button>
-                            <button className="text-on-surface-variant hover:text-on-surface flex items-center gap-2">
+                            <button 
+                              onClick={() => setShowShareCard(true)}
+                              className="text-on-surface-variant hover:text-on-surface flex items-center gap-2"
+                            >
                               <Share2 className="w-3 h-3" />
                               <span className="font-label text-[10px] font-bold uppercase">Share results</span>
                             </button>
